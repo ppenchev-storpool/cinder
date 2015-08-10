@@ -1034,6 +1034,17 @@ class XtremIOSnapshotsLimitExceeded(CinderException):
     message = _("Exceeded the limit of snapshots per volume")
 
 
+# StorPool driver
+class StorPoolConfigurationMissing(CinderException):
+    message = _("Missing parameter %(param)s in the %(section)s section "
+                "of the /etc/storpool.conf file.")
+
+
+class StorPoolConfigurationInvalid(CinderException):
+    message = _("Invalid parameter %(param)s in the %(section)s section "
+                "of the /etc/storpool.conf file: %(error)s")
+
+
 # Infortrend EonStor DS Driver
 class InfortrendCliException(CinderException):
     message = _("Infortrend CLI exception: %(err)s Param: %(param)s "
