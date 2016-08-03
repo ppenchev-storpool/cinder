@@ -193,13 +193,11 @@ class StorPoolTestCase(test.TestCase):
         self.assertRaises(KeyError,
                           self.driver.validate_connector,
                           {'no-host': None})
-        self.assertRaises(exception.StorPoolConfigurationMissing,
-                          self.driver.validate_connector,
-                          {'host': 'none'})
         self.assertRaises(exception.StorPoolConfigurationInvalid,
                           self.driver.validate_connector,
                           {'host': 'sbad'})
         self.assertTrue(self.driver.validate_connector({'host': 's01'}))
+        self.assertTrue(self.driver.validate_connector({'host': 'none'}))
 
         self.assertRaises(TypeError,
                           self.driver.initialize_connection,
@@ -207,9 +205,6 @@ class StorPoolTestCase(test.TestCase):
         self.assertRaises(KeyError,
                           self.driver.initialize_connection,
                           None, {'no-host': None})
-        self.assertRaises(exception.StorPoolConfigurationMissing,
-                          self.driver.initialize_connection,
-                          None, {'host': 'none'})
         self.assertRaises(exception.StorPoolConfigurationInvalid,
                           self.driver.initialize_connection,
                           None, {'host': 'sbad'})
@@ -220,6 +215,9 @@ class StorPoolTestCase(test.TestCase):
         c = self.driver.initialize_connection({'id': '616'}, {'host': 's02'})
         self.assertEqual('storpool', c['driver_volume_type'])
         self.assertDictEqual({'client_id': 2, 'volume': '616'}, c['data'])
+        c = self.driver.initialize_connection({'id': '1610'}, {'host': 'none'})
+        self.assertEqual('storpool', c['driver_volume_type'])
+        self.assertDictEqual({'client_id': 65, 'volume': '1610'}, c['data'])
 
         self.driver.terminate_connection(None, None)
         self.driver.create_export(None, None, {})
