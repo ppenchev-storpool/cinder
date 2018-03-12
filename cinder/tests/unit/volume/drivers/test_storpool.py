@@ -178,6 +178,8 @@ class StorPoolTestCase(test.TestCase):
         self.cfg.volume_backend_name = 'storpool_test'
         self.cfg.storpool_template = None
         self.cfg.storpool_replication = 3
+        self.cfg.iscsi_export_to = ''
+        self.cfg.iscsi_portal_group = 'test-group'
 
         mock_exec = mock.Mock()
         mock_exec.return_value = ('', '')
