@@ -192,7 +192,7 @@ class StorPoolDriver(driver.TransferVD, driver.ExtendVD,
                           cfg.iscsi.portalGroups.values())
         if not pg_found:
             raise Exception('StorPool Cinder iSCSI configuration error: '
-                            'no portal group "{pg}"'.format(pg=pg.name))
+                            'no portal group "{pg}"'.format(pg=pg_name))
         pg = pg_found[0]
 
         # Do we know about this initiator?
