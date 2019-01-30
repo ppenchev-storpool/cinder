@@ -342,17 +342,22 @@ class StorPoolDriver(driver.TransferVD, driver.ExtendVD,
                              host=connector['host'],
                              iqn=connector['initiator'],
                              pg=cfg['pg'].name))
-            self._attach.api().iSCSIConfigChange({
-                'commands': [
-                    {
-                        'exportDelete': {
-                            'initiator': cfg['initiator'].name,
-                            'portalGroup': cfg['pg'].name,
-                            'volumeName': cfg['volume_name'],
+            try:
+                self._attach.api().iSCSIConfigChange({
+                    'commands': [
+                        {
+                            'exportDelete': {
+                                'initiator': cfg['initiator'].name,
+                                'portalGroup': cfg['pg'].name,
+                                'volumeName': cfg['volume_name'],
+                            },
                         },
-                    },
-                ]
-            })
+                    ]
+                })
+            except spapi.ApiError as e:
+                if e.name not in ('objectExists', 'objectDoesNotExist'):
+                    raise
+                LOG.info('Looks like somebody beat us to it')
 
         if cfg['target'] is not None:
             last = True
@@ -370,15 +375,20 @@ class StorPoolDriver(driver.TransferVD, driver.ExtendVD,
                 LOG.info('Removing the StorPool iSCSI target '
                          'for the "{name}" volume ({id})'
                          .format(name=volume['display_name'], id=volume['id']))
-                self._attach.api().iSCSIConfigChange({
-                    'commands': [
-                        {
-                            'deleteTarget': {
-                                'volumeName': cfg['volume_name'],
+                try:
+                    self._attach.api().iSCSIConfigChange({
+                        'commands': [
+                            {
+                                'deleteTarget': {
+                                    'volumeName': cfg['volume_name'],
+                                },
                             },
-                        },
-                    ]
-                })
+                        ]
+                    })
+                except spapi.ApiError as e:
+                    if e.name not in ('objectDoesNotExist', 'invalidParam'):
+                        raise
+                    LOG.info('Looks like somebody beat us to it')
 
     def initialize_connection(self, volume, connector):
         if self._connector_wants_iscsi(connector):
