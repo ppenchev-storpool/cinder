@@ -1,4 +1,4 @@
-# Copyright 2014 - 2017, 2019  StorPool
+# Copyright 2014 - 2017, 2019 - 2021  StorPool
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -225,7 +225,9 @@ class StorPoolTestCase(test.TestCase):
     def test_initialize_connection_good(self, cid, hid, name):
         c = self.driver.initialize_connection({'id': hid}, {'host': name})
         self.assertEqual('storpool', c['driver_volume_type'])
-        self.assertDictEqual({'client_id': cid, 'volume': hid}, c['data'])
+        self.assertDictEqual({'client_id': cid, 'volume': hid,
+                              'access_mode': 'rw'},
+                             c['data'])
 
     def test_noop_functions(self):
         self.driver.terminate_connection(None, None)
