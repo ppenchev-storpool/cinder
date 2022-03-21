@@ -19,6 +19,7 @@ from __future__ import absolute_import
 
 import fnmatch
 import platform
+import time
 
 from oslo_config import cfg
 from oslo_log import log as logging
@@ -250,10 +251,10 @@ class StorPoolDriver(driver.TransferVD, driver.ExtendVD,
                                 'host is not defined in the StorPool '
                                 'configuration.'
                                 .format(iqn=iqn, host=connector['host']))
-            else:
-                LOG.info('Creating a StorPool iSCSI initiator '
-                         'for "{host}" ({iqn})'
-                         .format(host=connector['host'], iqn=iqn))
+            LOG.info('Creating a StorPool iSCSI initiator '
+                     'for "{host}" ({iqn})'
+                     .format(host=connector['host'], iqn=iqn))
+            try:
                 self._attach.api().iSCSIConfigChange({
                     'commands': [
                         {
@@ -271,20 +272,32 @@ class StorPoolDriver(driver.TransferVD, driver.ExtendVD,
                         },
                     ]
                 })
+            except spapi.ApiError as e:
+                if e.name != 'objectExists':
+                    raise
+                LOG.info('Looks like somebody beat us to it')
+
+            cfg = self._get_iscsi_config(iqn, volume['id'])
 
         if cfg['target'] is None:
             LOG.info('Creating a StorPool iSCSI target '
                      'for the "{name}" volume ({id})'
                      .format(name=volume['display_name'], id=volume['id']))
-            self._attach.api().iSCSIConfigChange({
-                'commands': [
-                    {
-                        'createTarget': {
-                            'volumeName': cfg['volume_name'],
+            try:
+                self._attach.api().iSCSIConfigChange({
+                    'commands': [
+                        {
+                            'createTarget': {
+                                'volumeName': cfg['volume_name'],
+                            },
                         },
-                    },
-                ]
-            })
+                    ]
+                })
+            except spapi.ApiError as e:
+                if e.name != 'objectExists':
+                    raise
+                LOG.info('Looks like somebody beat us to it')
+
             cfg = self._get_iscsi_config(iqn, volume['id'])
 
         if cfg['export'] is None:
@@ -295,17 +308,22 @@ class StorPoolDriver(driver.TransferVD, driver.ExtendVD,
                      .format(name=volume['display_name'], id=volume['id'],
                              host=connector['host'], iqn=iqn,
                              pg=cfg['pg'].name))
-            self._attach.api().iSCSIConfigChange({
-                'commands': [
-                    {
-                        'export': {
-                            'initiator': iqn,
-                            'portalGroup': cfg['pg'].name,
-                            'volumeName': cfg['volume_name'],
+            try:
+                self._attach.api().iSCSIConfigChange({
+                    'commands': [
+                        {
+                            'export': {
+                                'initiator': iqn,
+                                'portalGroup': cfg['pg'].name,
+                                'volumeName': cfg['volume_name'],
+                            },
                         },
-                    },
-                ]
-            })
+                    ]
+                })
+            except spapi.ApiError as e:
+                if e.name != 'objectExists':
+                    raise
+                LOG.info('Looks like somebody beat us to it')
 
         res = {
             'driver_volume_type': 'iscsi',
@@ -334,30 +352,44 @@ class StorPoolDriver(driver.TransferVD, driver.ExtendVD,
             raise
 
         if cfg['export'] is not None:
-            LOG.info('Removing the StorPool iSCSI export '
-                     'for the "{name}" volume ({id}) '
-                     'to the "{host}" initiator ({iqn}) '
-                     'in the "{pg}" portal group'
-                     .format(name=volume['display_name'], id=volume['id'],
-                             host=connector['host'],
-                             iqn=connector['initiator'],
-                             pg=cfg['pg'].name))
-            try:
-                self._attach.api().iSCSIConfigChange({
-                    'commands': [
-                        {
-                            'exportDelete': {
-                                'initiator': cfg['initiator'].name,
-                                'portalGroup': cfg['pg'].name,
-                                'volumeName': cfg['volume_name'],
+            removed = False
+            for _ in range(5):
+                LOG.info('Removing the StorPool iSCSI export '
+                         'for the "{name}" volume ({id}) '
+                         'to the "{host}" initiator ({iqn}) '
+                         'in the "{pg}" portal group'
+                         .format(name=volume['display_name'], id=volume['id'],
+                                 host=connector['host'],
+                                 iqn=connector['initiator'],
+                                 pg=cfg['pg'].name))
+                try:
+                    self._attach.api().iSCSIConfigChange({
+                        'commands': [
+                            {
+                                'exportDelete': {
+                                    'initiator': cfg['initiator'].name,
+                                    'portalGroup': cfg['pg'].name,
+                                    'volumeName': cfg['volume_name'],
+                                },
                             },
-                        },
-                    ]
-                })
-            except spapi.ApiError as e:
-                if e.name not in ('objectExists', 'objectDoesNotExist'):
-                    raise
-                LOG.info('Looks like somebody beat us to it')
+                        ]
+                    })
+                    removed = True
+                    break
+                except spapi.ApiError as e:
+                    if e.name == 'busy':
+                        LOG.info('The volume is still attached, will retry in a second')
+                        time.sleep(1)
+                        continue
+
+                    if e.name not in ('objectExists', 'objectDoesNotExist'):
+                        raise
+                    LOG.info('Looks like somebody beat us to it')
+                    removed = True
+                    break
+
+            if not removed:
+                raise self._backendException('Could not remove the volume, still busy')
 
         if cfg['target'] is not None:
             last = True
