@@ -43,6 +43,12 @@ if storpool:
 
 
 storpool_opts = [
+    cfg.BoolOpt('iscsi_cinder_volume',
+                default=False,
+                help='Let the cinder-volume service use iSCSI instead of '
+                     'the StorPool block device driver for accessing '
+                     'StorPool volumes, e.g. when creating a volume from '
+                     'an image or vice versa.'),
     cfg.StrOpt('iscsi_export_to',
                default='iqn.1991-05.com.microsoft:*',
                help='Export volumes via iSCSI to the hosts with IQNs that '
@@ -153,6 +159,12 @@ class StorPoolDriver(driver.TransferVD, driver.ExtendVD,
         protocol ones.  Match the initiator's IQN against the list of
         patterns supplied in the "iscsi_export_to" configuration setting.
         """
+        if connector is None:
+            return False
+        if connector.get('storpool_wants_iscsi'):
+            LOG.debug('  - forcing iSCSI for the controller')
+            return True
+
         try:
             iqn = connector.get('initiator')
         except Exception:
@@ -246,7 +258,9 @@ class StorPoolDriver(driver.TransferVD, driver.ExtendVD,
             raise
 
         if cfg['initiator'] is None:
-            if not self.configuration.iscsi_learn_initiator_iqns:
+            if not (self.configuration.iscsi_learn_initiator_iqns or
+                    self.configuration.iscsi_cinder_volume and
+                    connector.get('storpool_wants_iscsi')):
                 raise Exception('The "{iqn}" initiator IQN for the "{host}" '
                                 'host is not defined in the StorPool '
                                 'configuration.'
@@ -531,8 +545,10 @@ class StorPoolDriver(driver.TransferVD, driver.ExtendVD,
             raise
 
         export_to = self.configuration.iscsi_export_to
+        export_to_set = export_to is not None and export_to.split()
+        vol_iscsi = self.configuration.iscsi_cinder_volume
         pg_name = self.configuration.iscsi_portal_group
-        if export_to is not None and export_to.split() and pg_name is None:
+        if (export_to_set or vol_iscsi) and pg_name is None:
             msg = _('The "iscsi_portal_group" option is required if '
                     'any patterns are listed in "iscsi_export_to"')
             raise exception.VolumeDriverException(message=msg)
@@ -594,6 +610,13 @@ class StorPoolDriver(driver.TransferVD, driver.ExtendVD,
         if remote:
             return super(StorPoolDriver, self)._attach_volume(
                 context, volume, properties, remote=remote)
+
+        if self.configuration.iscsi_cinder_volume:
+            LOG.debug('- adding the "storpool_wants_iscsi" flag')
+            properties['storpool_wants_iscsi'] = True
+            return super(StorPoolDriver, self)._attach_volume(
+                context, volume, properties, remote=remote)
+
         req_id = context.request_id
         req = self._attach.get().get(req_id, None)
         if req is None:
